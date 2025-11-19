@@ -47,9 +47,10 @@ class ConfigLoader:
             'include_header': config.getboolean('TranscriptionSettings', 'includeheaderintranscription', fallback=False),
             'keep_audio_files': config.getboolean('TranscriptionSettings', 'keepaudiofiles', fallback=False),
             'send_as_files': config.getboolean('TranscriptionSettings', 'sendasfiles', fallback=True),
-            'send_timestamped_txt': config.getboolean('TranscriptionSettings', 'send_timestamped_txt', fallback=False), # ADDED, default to False
-            'shorten_timestamps_under_one_hour': config.getboolean('TranscriptionSettings', 'shorten_timestamps_under_one_hour', fallback=True), # ADDED THIS LINE in v0.1717            
+            'send_timestamped_txt': config.getboolean('TranscriptionSettings', 'send_timestamped_txt', fallback=False),  # ADDED, default to False
+            'shorten_timestamps_under_one_hour': config.getboolean('TranscriptionSettings', 'shorten_timestamps_under_one_hour', fallback=True),  # ADDED THIS LINE in v0.1717
             'send_as_messages': config.getboolean('TranscriptionSettings', 'sendasmessages', fallback=False),
+            'auto_transcribe_media': config.getboolean('TranscriptionSettings', 'auto_transcribe_media', fallback=True),
         }
         logger.info(f"Loaded transcription settings: {transcription_settings}")
         return transcription_settings

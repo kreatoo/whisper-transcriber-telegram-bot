@@ -134,11 +134,14 @@ class TranscriberBot:
         self.model = self.config.get('WhisperSettings', 'Model', fallback='medium.en')
         self.valid_models = self.config.get('ModelSettings', 'ValidModels', fallback='tiny, base, small, medium, large, turbo').split(', ')
 
+        self.auto_transcribe_media = self.config.getboolean('TranscriptionSettings', 'auto_transcribe_media', fallback=True)
+
         self.transcription_settings = {
             'includeheaderintranscription': self.config.getboolean('TranscriptionSettings', 'includeheaderintranscription', fallback=True),
             'keepaudiofiles': self.config.getboolean('TranscriptionSettings', 'keepaudiofiles', fallback=False),
             'sendasfiles': self.config.getboolean('TranscriptionSettings', 'sendasfiles', fallback=True),
-            'sendasmessages': self.config.getboolean('TranscriptionSettings', 'sendasmessages', fallback=False)
+            'sendasmessages': self.config.getboolean('TranscriptionSettings', 'sendasmessages', fallback=False),
+            'auto_transcribe_media': self.auto_transcribe_media
         }
 
         logger.info(f"Transcription settings loaded: {self.transcription_settings}")
@@ -156,6 +159,9 @@ class TranscriberBot:
         # Define directories for storing video messages
         self.video_messages_dir = "video_messages"
         os.makedirs(self.video_messages_dir, exist_ok=True)
+
+        # Reference for audio directory (used in video handling)
+        self.audio_messages_dir = audio_messages_dir
 
         # Define output directory for transcriptions
         self.output_dir = "transcriptions"
@@ -887,6 +893,24 @@ class TranscriberBot:
             logger.error(f"Exception in handle_reply_audio_file: {e}")
             await update.message.reply_text("An error occurred while processing your file.")
 
+    async def _auto_transcribe_disabled_notice(self, update: Update, context: CallbackContext) -> None:
+        """
+        Inform the user that automatic media transcription is disabled and
+        explain how to trigger transcription manually.
+        """
+        bot_username = context.bot.username
+        if bot_username:
+            instructions = (
+                f"Reply to this media and mention @{bot_username} when you want me to transcribe it."
+            )
+        else:
+            instructions = "Reply to this media and mention the bot when you want it transcribed."
+
+        await update.message.reply_text(
+            "Automatic transcription of uploaded media is currently disabled.\n"
+            f"{instructions}"
+        )
+
     async def handle_voice_message(self, update: Update, context: CallbackContext) -> None:
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id
@@ -902,6 +926,10 @@ class TranscriberBot:
         
         if not self.config.getboolean('AudioSettings', 'allowvoicemessages'):
             await update.message.reply_text("Voice messages are not allowed.")
+            return
+
+        if not self.auto_transcribe_media:
+            await self._auto_transcribe_disabled_notice(update, context)
             return
 
         file = await context.bot.get_file(voice.file_id)
@@ -967,6 +995,10 @@ class TranscriberBot:
         if not allow_audio_files:
             await update.message.reply_text("File processing is not allowed.")
             logger.info("File processing is not allowed according to config.")
+            return
+
+        if not self.auto_transcribe_media:
+            await self._auto_transcribe_disabled_notice(update, context)
             return
 
         # Determine whether the message contains a document or an audio
@@ -1076,6 +1108,10 @@ class TranscriberBot:
                 "Please send audio files only, or upload your video to a supported media platform and send the link."
             )
             logger.info("Video processing is not allowed according to config.")
+            return
+
+        if not self.auto_transcribe_media:
+            await self._auto_transcribe_disabled_notice(update, context)
             return
 
         # Proceed to handle the video file

@@ -33,6 +33,7 @@ Can be safely installed and deployed with [Docker](https://www.docker.com/) by u
    - Plaintext (TXT) outputs can be configured to include video description and/or timestamps
 - 🔄 Handles concurrent transcription requests efficiently with async & task queuing
 - 🕒 Features an asynchronous automatic queue system to manage multiple transcription requests seamlessly
+- 🎚️ Toggle automatic media transcription on or off (`auto_transcribe_media`) to choose between instant processing and manual, on-demand runs
 
 ## Installation (non-Docker version)
 
