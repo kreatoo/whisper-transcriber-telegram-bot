@@ -201,6 +201,12 @@ class TranscriberBot:
                 "⚠️ This bot is restricted to specific groups. Access denied."
             )
             return
+        
+        # Log if bot is mentioned (for debugging)
+        if update.message.chat.type in ["group", "supergroup"]:
+            bot_username = context.bot.username
+            if message_text and bot_username and f"@{bot_username}" in message_text:
+                logger.info(f"Bot @{bot_username} mentioned in group chat (is_reply={bool(update.message.reply_to_message)})")
 
         # Check if message is replying to a voice message or audio file
         if update.message.reply_to_message:
