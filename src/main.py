@@ -208,13 +208,28 @@ class TranscriberBot:
             bot_username = context.bot.username
             
             # Check if bot is mentioned in the message
+            # In private chats, always consider bot as mentioned
+            # In group chats, check for @bot_username in text or entities
             is_bot_mentioned = False
-            if message_text:
-                # Check for @bot_username mention or if message is in private chat
-                is_bot_mentioned = (
-                    f"@{bot_username}" in message_text or 
-                    update.message.chat.type == "private"
-                )
+            
+            if update.message.chat.type == "private":
+                is_bot_mentioned = True
+            elif message_text and f"@{bot_username}" in message_text:
+                is_bot_mentioned = True
+            elif update.message.entities:
+                # Check message entities for mentions
+                for entity in update.message.entities:
+                    if entity.type == "mention":
+                        # Extract the mention text
+                        mention_text = message_text[entity.offset:entity.offset + entity.length] if message_text else ""
+                        if mention_text == f"@{bot_username}":
+                            is_bot_mentioned = True
+                            break
+                    elif entity.type == "text_mention" and entity.user:
+                        # Check if the mentioned user is the bot
+                        if entity.user.id == context.bot.id:
+                            is_bot_mentioned = True
+                            break
             
             # If bot is mentioned and replied message has voice or audio
             if is_bot_mentioned and (replied_msg.voice or replied_msg.audio or replied_msg.document):
