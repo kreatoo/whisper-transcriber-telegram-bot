@@ -3,6 +3,11 @@ import base64
 import logging
 import json
 import os
+import io
+try:
+    from pydub import AudioSegment
+except ImportError:
+    AudioSegment = None
 
 logger = logging.getLogger(__name__)
 
@@ -25,18 +30,29 @@ async def transcribe_with_chutes(audio_path, api_token, model="chutes-whisper-la
         logger.error(f"Audio file not found: {audio_path}")
         return None
 
-    try:
-        with open(audio_path, "rb") as audio_file:
-            audio_content = audio_file.read()
-            audio_b64 = base64.b64encode(audio_content).decode('utf-8')
+    if AudioSegment is None:
+        logger.error("pydub is not installed. Cannot convert audio for Chutes API.")
+        return None
 
-        # If language is 'auto', send None (null in JSON) to let the model detect it
-        if language == "auto":
-            language = None
+    try:
+        # Convert audio to WAV (required by Chutes example code which forces .wav extension)
+        # We use pydub to handle various input formats (mp3, ogg, etc.) and force 16kHz mono
+        audio = AudioSegment.from_file(audio_path)
+        audio = audio.set_frame_rate(16000).set_channels(1)
+        
+        wav_io = io.BytesIO()
+        audio.export(wav_io, format="wav")
+        audio_content = wav_io.getvalue()
+        
+        audio_b64 = base64.b64encode(audio_content).decode('utf-8')
+
+        # If language is 'auto' or None, send empty string to let the model detect it
+        if language == "auto" or language is None:
+            language = ""
 
         payload = {
-            "language": language,
-            "audio_b64": audio_b64
+            "audio_b64": audio_b64,
+            "language": language
         }
 
         headers = {
@@ -77,15 +93,26 @@ def save_chutes_outputs(result, output_dir, base_filename):
     """
     created_files = {}
     
+    segments = []
+    text = ""
+
+    if isinstance(result, list):
+        # If result is a list, it's a list of segments
+        segments = result
+        # Construct full text from segments
+        text = " ".join([seg.get('text', '').strip() for seg in segments])
+    elif isinstance(result, dict):
+        # If result is a dict, try to get text and segments
+        text = result.get('text', '')
+        segments = result.get('segments', [])
+    
     # Save TXT
-    text = result.get('text', '')
     if text:
         txt_path = os.path.join(output_dir, f"{base_filename}.txt")
         with open(txt_path, 'w', encoding='utf-8') as f:
             f.write(text)
         created_files['txt'] = txt_path
 
-    segments = result.get('segments', [])
     if segments:
         # Save SRT
         srt_path = os.path.join(output_dir, f"{base_filename}.srt")
@@ -93,8 +120,8 @@ def save_chutes_outputs(result, output_dir, base_filename):
             for i, segment in enumerate(segments, start=1):
                 start = format_timestamp(segment['start'], ',')
                 end = format_timestamp(segment['end'], ',')
-                text = segment['text'].strip()
-                f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
+                seg_text = segment.get('text', '').strip()
+                f.write(f"{i}\n{start} --> {end}\n{seg_text}\n\n")
         created_files['srt'] = srt_path
 
         # Save VTT
@@ -104,8 +131,8 @@ def save_chutes_outputs(result, output_dir, base_filename):
             for segment in segments:
                 start = format_timestamp(segment['start'], '.')
                 end = format_timestamp(segment['end'], '.')
-                text = segment['text'].strip()
-                f.write(f"{start} --> {end}\n{text}\n\n")
+                seg_text = segment.get('text', '').strip()
+                f.write(f"{start} --> {end}\n{seg_text}\n\n")
         created_files['vtt'] = vtt_path
 
     return created_files
