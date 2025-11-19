@@ -19,6 +19,7 @@ import configparser
 import os
 import subprocess
 import datetime
+import copy
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -201,6 +202,33 @@ class TranscriberBot:
                 "⚠️ This bot is restricted to specific groups. Access denied."
             )
             return
+
+        # Check if message is replying to a voice message or audio file
+        if update.message.reply_to_message:
+            replied_msg = update.message.reply_to_message
+            bot_username = context.bot.username
+            
+            # Check if bot is mentioned in the message
+            is_bot_mentioned = False
+            if message_text:
+                # Check for @bot_username mention or if message is in private chat
+                is_bot_mentioned = (
+                    f"@{bot_username}" in message_text or 
+                    update.message.chat.type == "private"
+                )
+            
+            # If bot is mentioned and replied message has voice or audio
+            if is_bot_mentioned and (replied_msg.voice or replied_msg.audio or replied_msg.document):
+                logger.info(f"Bot mentioned in reply to voice/audio message from user {user_id}")
+                
+                # Handle voice message
+                if replied_msg.voice:
+                    await self.handle_reply_voice_message(replied_msg, update, context)
+                    return
+                # Handle audio file
+                elif replied_msg.audio or replied_msg.document:
+                    await self.handle_reply_audio_file(replied_msg, update, context)
+                    return
 
         # ~~~~~ Cooldown logic ~~~~~
         now = datetime.now()
@@ -415,7 +443,13 @@ class TranscriberBot:
                                         # Send each chunk
                                         for i, chunk in enumerate(chunks):
                                             try:
-                                                await bot.send_message(chat_id=update.effective_chat.id, text=chunk, parse_mode='HTML')
+                                                # Reply to the original message instead of sending plain
+                                                await bot.send_message(
+                                                    chat_id=update.effective_chat.id, 
+                                                    text=chunk, 
+                                                    parse_mode='HTML',
+                                                    reply_to_message_id=update.message.message_id
+                                                )
                                                 logger.info(f"Sent message chunk: {i + 1}")
                                             except Exception as e:
                                                 logger.error(f"Error sending message chunk {i + 1}: {e}")
@@ -438,7 +472,11 @@ class TranscriberBot:
                                     for fmt, path in transcription_paths.items():
                                         try:
                                             with open(path, 'rb') as file:
-                                                await bot.send_document(chat_id=update.effective_chat.id, document=file)
+                                                await bot.send_document(
+                                                    chat_id=update.effective_chat.id, 
+                                                    document=file,
+                                                    reply_to_message_id=update.message.message_id
+                                                )
                                             logger.info(f"Sent {fmt} file to user {user_id}: {path}")
                                         except Exception as e:
                                             logger.error(f"Failed to send {fmt} file to user {user_id}: {path}, error: {e}")
@@ -676,6 +714,142 @@ class TranscriberBot:
                 f"Invalid model specified.\n\n"
                 f"Available models:\n{models_list}",
                 parse_mode='HTML')
+
+    async def handle_reply_voice_message(self, replied_msg, update: Update, context: CallbackContext) -> None:
+        """Handle transcription when bot is mentioned in reply to a voice message"""
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        voice = replied_msg.voice
+        
+        if not self.config.getboolean('AudioSettings', 'allowvoicemessages'):
+            await update.message.reply_text("Voice messages are not allowed.")
+            return
+
+        file = await context.bot.get_file(voice.file_id)
+        ogg_file_path = os.path.join(audio_messages_dir, f'{file.file_id}.ogg')
+        wav_file_path = os.path.join(audio_messages_dir, f'{file.file_id}.wav')
+        await file.download_to_drive(ogg_file_path)
+
+        voice_msg = self.notification_settings['voice_message_received']
+        if voice_msg.strip():
+            await replied_msg.reply_text(voice_msg)
+
+        # Convert Ogg Opus to WAV using ffmpeg
+        try:
+            subprocess.run(['ffmpeg', '-i', ogg_file_path, wav_file_path], check=True)
+            logger.info(f"Converted voice message to WAV format: {wav_file_path}")
+
+            # Create a new update object with the replied message as the message
+            # We need to use deepcopy to avoid modifying the original update
+            reply_update = copy.deepcopy(update)
+            reply_update._message = replied_msg
+            
+            # Put the WAV file into the queue with the modified update
+            await self.task_queue.put((wav_file_path, context.bot, reply_update))
+            queue_length = self.task_queue.qsize()
+
+            msg_next = self.notification_settings['queue_message_next']
+            msg_queued = self.notification_settings['queue_message_queued']
+
+            if queue_length == 1:
+                if msg_next.strip():
+                    await replied_msg.reply_text(msg_next)
+            else:
+                if msg_queued.strip():
+                    jobs_ahead = queue_length - 1
+                    final_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
+                    await replied_msg.reply_text(final_text)
+
+            logger.info(f"Reply voice message queued for transcription. Queue length: {queue_length}")
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error converting voice message: {e}")
+
+    async def handle_reply_audio_file(self, replied_msg, update: Update, context: CallbackContext) -> None:
+        """Handle transcription when bot is mentioned in reply to an audio file"""
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+
+        allow_audio_files = self.config.getboolean('AudioSettings', 'allowaudiofiles', fallback=True)
+        if not allow_audio_files:
+            await update.message.reply_text("File processing is not allowed.")
+            return
+
+        # Determine whether the message contains a document or an audio
+        document = replied_msg.document
+        audio = replied_msg.audio
+
+        if document:
+            file_info = document
+            file_name = document.file_name
+            logger.info(f"Received a document in reply from user {user_id}: {file_name}")
+        elif audio:
+            file_info = audio
+            file_name = audio.file_name or f"{audio.file_unique_id}.mp3"
+            logger.info(f"Received an audio file in reply from user {user_id}: {file_name}")
+        else:
+            logger.info("No document or audio found in the replied message.")
+            return
+
+        try:
+            # Check file size before downloading
+            file_size = file_info.file_size
+            if file_size > self.max_file_size_bytes:
+                await update.message.reply_text(
+                    "The file is too large to process. "
+                    "Telegram bots can only download files up to 20 MB in size. "
+                    "Please send a smaller file or provide a link to the audio."
+                )
+                logger.warning(f"File is too big: {file_size} bytes.")
+                return
+
+            file_extension = file_name.split('.')[-1].lower()
+            logger.info(f"Extracted file extension: {file_extension}")
+
+            if file_extension not in self.allowed_formats:
+                await update.message.reply_text(
+                    f"Files with extension .{file_extension} are not supported.\n"
+                    f"Supported formats are: {', '.join(self.allowed_formats)}"
+                )
+                logger.info("File extension not in allowed formats.")
+                return
+
+            # Proceed with downloading and processing the file
+            file = await context.bot.get_file(file_info.file_id)
+            file_path = os.path.join(audio_messages_dir, f'{file_info.file_unique_id}.{file_extension}')
+            await file.download_to_drive(file_path)
+            logger.info(f"File downloaded to {file_path}")
+
+            audio_file_msg = self.notification_settings['audio_file_received']
+            if audio_file_msg.strip():
+                await replied_msg.reply_text(audio_file_msg)
+
+            # Create a new update object with the replied message as the message
+            # We need to use deepcopy to avoid modifying the original update
+            reply_update = copy.deepcopy(update)
+            reply_update._message = replied_msg
+            
+            # Queue the file for transcription
+            await self.task_queue.put((file_path, context.bot, reply_update))
+            queue_length = self.task_queue.qsize()
+
+            msg_next = self.notification_settings['queue_message_next']
+            msg_queued = self.notification_settings['queue_message_queued']
+
+            if queue_length == 1:
+                if msg_next.strip():
+                    await replied_msg.reply_text(msg_next)
+            else:
+                if msg_queued.strip():
+                    jobs_ahead = queue_length - 1
+                    final_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
+                    await replied_msg.reply_text(final_text)
+            
+            logger.info(f"Reply audio file queued for transcription. Queue length: {queue_length}")
+
+        except Exception as e:
+            logger.error(f"Exception in handle_reply_audio_file: {e}")
+            await update.message.reply_text("An error occurred while processing your file.")
 
     async def handle_voice_message(self, update: Update, context: CallbackContext) -> None:
         user_id = update.effective_user.id
