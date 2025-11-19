@@ -210,19 +210,19 @@ class TranscriberBot:
             
             # Check if bot is mentioned in the message
             is_bot_mentioned = False
-            
-            # Check in private chat
-            if update.message.chat.type == "private":
-                is_bot_mentioned = True
-            # Check for text-based mention
-            elif message_text and f"@{bot_username}" in message_text:
-                is_bot_mentioned = True
-            # Check for entity-based mentions (more reliable for Telegram)
-            elif update.message.entities:
+            if message_text:
+                # Check for @bot_username mention or if message is in private chat
+                is_bot_mentioned = (
+                    f"@{bot_username}" in message_text or 
+                    update.message.chat.type == "private"
+                )
+            # Also check for entity-based mentions (more reliable for Telegram)
+            # This handles cases where mentions are entities but not in raw text
+            if not is_bot_mentioned and update.message.entities:
                 for entity in update.message.entities:
                     if entity.type == "mention":
                         # Extract the mention from the text
-                        mention_text = message_text[entity.offset:entity.offset + entity.length]
+                        mention_text = message_text[entity.offset:entity.offset + entity.length] if message_text else ""
                         if mention_text == f"@{bot_username}":
                             is_bot_mentioned = True
                             break
