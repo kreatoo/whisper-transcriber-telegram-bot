@@ -205,8 +205,13 @@ class TranscriberBot:
         # Log if bot is mentioned (for debugging)
         if update.message.chat.type in ["group", "supergroup"]:
             bot_username = context.bot.username
+            logger.info(f"Processing group message. bot_username={bot_username}, message_text='{message_text}', chat_type={update.message.chat.type}")
             if message_text and bot_username and f"@{bot_username}" in message_text:
                 logger.info(f"Bot @{bot_username} mentioned in group chat (is_reply={bool(update.message.reply_to_message)})")
+            elif message_text and bot_username:
+                logger.info(f"Bot NOT mentioned (looking for '@{bot_username}' in '{message_text}')")
+            else:
+                logger.info(f"Cannot check mention: message_text={message_text is not None}, bot_username={bot_username is not None}")
 
         # Check if message is replying to a voice message or audio file
         if update.message.reply_to_message:
