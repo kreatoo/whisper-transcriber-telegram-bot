@@ -203,6 +203,33 @@ class TranscriberBot:
             )
             return
 
+        # In group chats, only respond to messages that mention the bot or are in private chat
+        # This prevents the bot from responding to every message in a group
+        if update.message.chat.type != "private":
+            bot_username = context.bot.username
+            bot_is_mentioned = False
+            
+            # Check for text-based mention
+            if message_text and f"@{bot_username}" in message_text:
+                bot_is_mentioned = True
+            # Check for entity-based mentions
+            elif update.message.entities:
+                for entity in update.message.entities:
+                    if entity.type == "mention":
+                        mention_text = message_text[entity.offset:entity.offset + entity.length] if message_text else ""
+                        if mention_text == f"@{bot_username}":
+                            bot_is_mentioned = True
+                            break
+                    elif entity.type == "text_mention":
+                        if hasattr(entity, 'user') and entity.user.username == bot_username:
+                            bot_is_mentioned = True
+                            break
+            
+            # If not mentioned in a group chat, ignore the message
+            if not bot_is_mentioned:
+                logger.debug(f"Ignoring message in group chat {chat_id} - bot not mentioned")
+                return
+
         # Check if message is replying to a voice message or audio file
         if update.message.reply_to_message:
             replied_msg = update.message.reply_to_message
