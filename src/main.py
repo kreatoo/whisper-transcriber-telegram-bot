@@ -205,31 +205,39 @@ class TranscriberBot:
         # Check if message is replying to a voice message or audio file
         if update.message.reply_to_message:
             replied_msg = update.message.reply_to_message
-            bot_username = context.bot.username
             
-            # Check if bot is mentioned in the message
-            # In private chats, always consider bot as mentioned
-            # In group chats, check for @bot_username in text or entities
+            # Get bot information
+            bot_username = context.bot.username
+            bot_id = context.bot.id
+            
+            # Check if bot is mentioned in the message (only in group chats)
             is_bot_mentioned = False
             
-            if update.message.chat.type == "private":
-                is_bot_mentioned = True
-            elif message_text and f"@{bot_username}" in message_text:
-                is_bot_mentioned = True
-            elif update.message.entities:
-                # Check message entities for mentions
-                for entity in update.message.entities:
-                    if entity.type == "mention":
-                        # Extract the mention text
-                        mention_text = message_text[entity.offset:entity.offset + entity.length] if message_text else ""
-                        if mention_text == f"@{bot_username}":
-                            is_bot_mentioned = True
-                            break
-                    elif entity.type == "text_mention" and entity.user:
-                        # Check if the mentioned user is the bot
-                        if entity.user.id == context.bot.id:
-                            is_bot_mentioned = True
-                            break
+            # Only work in group/supergroup chats, not in private chats
+            if update.message.chat.type in ["group", "supergroup"]:
+                logger.info(f"Checking for bot mention in group chat. bot_username={bot_username}, message_text={message_text}")
+                
+                # Check if bot is mentioned in message text
+                if message_text and bot_username and f"@{bot_username}" in message_text:
+                    is_bot_mentioned = True
+                    logger.info(f"Bot mentioned in text: @{bot_username}")
+                
+                # Also check message entities for mentions
+                if not is_bot_mentioned and update.message.entities:
+                    for entity in update.message.entities:
+                        if entity.type == "mention" and message_text:
+                            # Extract the mention from text
+                            mention_text = message_text[entity.offset:entity.offset + entity.length]
+                            if mention_text == f"@{bot_username}":
+                                is_bot_mentioned = True
+                                logger.info(f"Bot mentioned in entity: {mention_text}")
+                                break
+                        elif entity.type == "text_mention" and entity.user:
+                            # Check if the mentioned user is the bot
+                            if entity.user.id == bot_id:
+                                is_bot_mentioned = True
+                                logger.info(f"Bot mentioned via text_mention entity")
+                                break
             
             # If bot is mentioned and replied message has voice or audio
             if is_bot_mentioned and (replied_msg.voice or replied_msg.audio or replied_msg.document):
