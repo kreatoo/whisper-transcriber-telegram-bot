@@ -19,7 +19,6 @@ import configparser
 import os
 import subprocess
 import datetime
-import copy
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -740,9 +739,10 @@ class TranscriberBot:
             logger.info(f"Converted voice message to WAV format: {wav_file_path}")
 
             # Create a new update object with the replied message as the message
-            # We need to use deepcopy to avoid modifying the original update
-            reply_update = copy.deepcopy(update)
-            reply_update._message = replied_msg
+            reply_update = Update(
+                update_id=update.update_id,
+                message=replied_msg
+            )
             
             # Put the WAV file into the queue with the modified update
             await self.task_queue.put((wav_file_path, context.bot, reply_update))
@@ -825,9 +825,10 @@ class TranscriberBot:
                 await replied_msg.reply_text(audio_file_msg)
 
             # Create a new update object with the replied message as the message
-            # We need to use deepcopy to avoid modifying the original update
-            reply_update = copy.deepcopy(update)
-            reply_update._message = replied_msg
+            reply_update = Update(
+                update_id=update.update_id,
+                message=replied_msg
+            )
             
             # Queue the file for transcription
             await self.task_queue.put((file_path, context.bot, reply_update))
