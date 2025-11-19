@@ -271,26 +271,32 @@ class TranscriberBot:
             # See if there's at least one URL
             urls = re.findall(r'(https?://\S+)', message_text)
             if urls:
-                # It’s a valid URL => queue it
-                await self.task_queue.put((message_text, context.bot, update))
-                queue_length = self.task_queue.qsize()
-                logger.info(f"Task added to the queue. Current queue size: {queue_length}")
-
                 # ~~~~~ Access your config-based messages ~~~~~
                 msg_next = self.notification_settings['queue_message_next']     # e.g. "⏳ Your request is next..."
                 msg_queued = self.notification_settings['queue_message_queued'] # e.g. "Your request has been added..."
-
-                if queue_length == 1:
+                
+                messages_to_delete = []
+                queue_length = self.task_queue.qsize()
+                sent_queue_msg = None
+                
+                if queue_length == 0:
                     # Only job => "next" message
                     if msg_next.strip():  # only send if user didn't leave it blank
-                        await update.message.reply_text(msg_next)
+                        sent_queue_msg = await update.message.reply_text(msg_next)
                 else:
                     # There's a backlog => "queued" message
                     if msg_queued.strip():
-                        jobs_ahead = queue_length - 1
+                        jobs_ahead = queue_length
                         # Insert placeholder if any
                         final_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
-                        await update.message.reply_text(final_text)
+                        sent_queue_msg = await update.message.reply_text(final_text)
+
+                if sent_queue_msg:
+                    messages_to_delete.append(sent_queue_msg)
+
+                # It’s a valid URL => queue it
+                await self.task_queue.put((message_text, context.bot, update, messages_to_delete))
+                logger.info(f"Task added to the queue. Current queue size: {queue_length + 1}")
 
             else:
                 # No valid URL => do what you were doing before
@@ -311,7 +317,14 @@ class TranscriberBot:
     async def process_queue(self):
         while True:
             try:
-                task, bot, update = await self.task_queue.get()
+                queue_item = await self.task_queue.get()
+                # Unpack based on length to support legacy tuples (if any remain) and new format
+                if len(queue_item) == 4:
+                    task, bot, update, messages_to_delete = queue_item
+                else:
+                    task, bot, update = queue_item
+                    messages_to_delete = []
+
                 user_id = update.effective_user.id
                 logger.info(f"Processing task for user ID {user_id}: {task}")
 
@@ -512,6 +525,15 @@ class TranscriberBot:
 
                         finally:
                             self.task_queue.task_done()
+
+                            # Delete status messages if any
+                            if messages_to_delete:
+                                for msg in messages_to_delete:
+                                    try:
+                                        await msg.delete()
+                                        logger.info(f"Deleted status message: {msg.message_id}")
+                                    except Exception as e:
+                                        logger.warning(f"Failed to delete status message {msg.message_id}: {e}")
 
                             # Check if completion message should be sent
                             if success and notification_settings['send_completion_message']:
@@ -736,8 +758,10 @@ class TranscriberBot:
         await file.download_to_drive(ogg_file_path)
 
         voice_msg = self.notification_settings['voice_message_received']
+        messages_to_delete = []
         if voice_msg.strip():
-            await replied_msg.reply_text(voice_msg)
+            sent_voice_msg = await replied_msg.reply_text(voice_msg)
+            messages_to_delete.append(sent_voice_msg)
 
         # Convert Ogg Opus to WAV using ffmpeg
         try:
@@ -748,21 +772,25 @@ class TranscriberBot:
             # We avoid modifying the original update by creating a new one
             reply_update = Update(update_id=update.update_id, message=replied_msg)
             
-            # Put the WAV file into the queue with the modified update
-            await self.task_queue.put((wav_file_path, context.bot, reply_update))
+            # Put the WAV file into the queue with the modified update and messages to delete
+            await self.task_queue.put((wav_file_path, context.bot, reply_update, messages_to_delete))
             queue_length = self.task_queue.qsize()
 
             msg_next = self.notification_settings['queue_message_next']
             msg_queued = self.notification_settings['queue_message_queued']
 
+            sent_queue_msg = None
             if queue_length == 1:
                 if msg_next.strip():
-                    await replied_msg.reply_text(msg_next)
+                    sent_queue_msg = await replied_msg.reply_text(msg_next)
             else:
                 if msg_queued.strip():
                     jobs_ahead = queue_length - 1
                     final_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
-                    await replied_msg.reply_text(final_text)
+                    sent_queue_msg = await replied_msg.reply_text(final_text)
+
+            if sent_queue_msg:
+                messages_to_delete.append(sent_queue_msg)
 
             logger.info(f"Reply voice message queued for transcription. Queue length: {queue_length}")
 
@@ -825,30 +853,37 @@ class TranscriberBot:
             logger.info(f"File downloaded to {file_path}")
 
             audio_file_msg = self.notification_settings['audio_file_received']
+            messages_to_delete = []
             if audio_file_msg.strip():
-                await replied_msg.reply_text(audio_file_msg)
+                sent_audio_msg = await replied_msg.reply_text(audio_file_msg)
+                messages_to_delete.append(sent_audio_msg)
 
             # Create a new update object with the replied message as the message
             # We avoid modifying the original update by creating a new one
             reply_update = Update(update_id=update.update_id, message=replied_msg)
             
-            # Queue the file for transcription
-            await self.task_queue.put((file_path, context.bot, reply_update))
-            queue_length = self.task_queue.qsize()
-
             msg_next = self.notification_settings['queue_message_next']
             msg_queued = self.notification_settings['queue_message_queued']
 
-            if queue_length == 1:
+            queue_length = self.task_queue.qsize()
+            sent_queue_msg = None
+            
+            if queue_length == 0:
                 if msg_next.strip():
-                    await replied_msg.reply_text(msg_next)
+                    sent_queue_msg = await replied_msg.reply_text(msg_next)
             else:
                 if msg_queued.strip():
-                    jobs_ahead = queue_length - 1
+                    jobs_ahead = queue_length
                     final_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
-                    await replied_msg.reply_text(final_text)
+                    sent_queue_msg = await replied_msg.reply_text(final_text)
             
-            logger.info(f"Reply audio file queued for transcription. Queue length: {queue_length}")
+            if sent_queue_msg:
+                messages_to_delete.append(sent_queue_msg)
+
+            # Queue the file for transcription
+            await self.task_queue.put((file_path, context.bot, reply_update, messages_to_delete))
+            
+            logger.info(f"Reply audio file queued for transcription. Queue length: {queue_length + 1}")
 
         except Exception as e:
             logger.error(f"Exception in handle_reply_audio_file: {e}")
@@ -878,16 +913,18 @@ class TranscriberBot:
 
         # NEW: read config-based "voice_message_received"
         voice_msg = self.notification_settings['voice_message_received']
+        messages_to_delete = []
         if voice_msg.strip():
-            await update.message.reply_text(voice_msg)
+            sent_voice_msg = await update.message.reply_text(voice_msg)
+            messages_to_delete.append(sent_voice_msg)
 
         # Convert Ogg Opus to WAV using ffmpeg
         try:
             subprocess.run(['ffmpeg', '-y', '-i', ogg_file_path, wav_file_path], check=True)
             logger.info(f"Converted voice message to WAV format: {wav_file_path}")
 
-            # Put the WAV file into the queue
-            await self.task_queue.put((wav_file_path, context.bot, update))
+            # Put the WAV file into the queue with messages to delete
+            await self.task_queue.put((wav_file_path, context.bot, update, messages_to_delete))
             queue_length = self.task_queue.qsize()
 
             # Load the config-based queue messages:
@@ -895,16 +932,20 @@ class TranscriberBot:
             msg_queued = self.notification_settings['queue_message_queued'] # e.g. "Your request has been added..."
 
             # Decide what message to show based on queue length
+            sent_queue_msg = None
             if queue_length == 1:
                 # If it's the only job in queue, show the “next” message (if not blank)
                 if msg_next.strip():
-                    await update.message.reply_text(msg_next)
+                    sent_queue_msg = await update.message.reply_text(msg_next)
             else:
                 # If there's already something in queue, show the “queued” message (if not blank)
                 if msg_queued.strip():
                     jobs_ahead = queue_length - 1
                     final_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
-                    await update.message.reply_text(final_text)
+                    sent_queue_msg = await update.message.reply_text(final_text)
+            
+            if sent_queue_msg:
+                messages_to_delete.append(sent_queue_msg)
 
             logger.info(f"File queued for transcription. Queue length: {queue_length}")
 
@@ -983,30 +1024,37 @@ class TranscriberBot:
 
             # After file is downloaded:
             audio_file_msg = self.notification_settings['audio_file_received']
+            messages_to_delete = []
             if audio_file_msg.strip():
-                await update.message.reply_text(audio_file_msg)
-
-            # Queue the file for transcription
-            await self.task_queue.put((file_path, context.bot, update))
-            queue_length = self.task_queue.qsize()
+                sent_audio_msg = await update.message.reply_text(audio_file_msg)
+                messages_to_delete.append(sent_audio_msg)
 
             # Load the config-based queue messages:
             msg_next = self.notification_settings['queue_message_next']     # e.g. "⏳ Your request is next..."
             msg_queued = self.notification_settings['queue_message_queued'] # e.g. "Your request has been added..."
 
+            queue_length = self.task_queue.qsize()
+            sent_queue_msg = None
+            
             # Decide what message to show based on queue length
-            if queue_length == 1:
+            if queue_length == 0:
                 # If it's the only job in queue, show the “next” message (if not blank)
                 if msg_next.strip():
-                    await update.message.reply_text(msg_next)
+                    sent_queue_msg = await update.message.reply_text(msg_next)
             else:
                 # If there's already something in queue, show the “queued” message (if not blank)
                 if msg_queued.strip():
-                    jobs_ahead = queue_length - 1
+                    jobs_ahead = queue_length
                     final_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
-                    await update.message.reply_text(final_text)            
+                    sent_queue_msg = await update.message.reply_text(final_text)
             
-            logger.info(f"File queued for transcription. Queue length: {queue_length}")
+            if sent_queue_msg:
+                messages_to_delete.append(sent_queue_msg)
+
+            # Queue the file for transcription
+            await self.task_queue.put((file_path, context.bot, update, messages_to_delete))
+            
+            logger.info(f"File queued for transcription. Queue length: {queue_length + 1}")
 
         except Exception as e:
             logger.error(f"Exception in handle_audio_file: {e}")
@@ -1065,16 +1113,21 @@ class TranscriberBot:
                 subprocess.run(['ffmpeg', '-y', '-i', video_file_path, '-vn', '-acodec', 'libmp3lame', audio_file_path], check=True)
                 logger.info(f"Extracted audio from video file: {audio_file_path}")
 
-                # Queue the audio file for transcription
-                await self.task_queue.put((audio_file_path, context.bot, update))
+                messages_to_delete = []
                 queue_length = self.task_queue.qsize()
+                
                 response_text = (
                     "Your request is next and is currently being processed."
-                    if queue_length == 1
-                    else f"Your request has been added to the queue. There are {queue_length - 1} jobs ahead of yours."
+                    if queue_length == 0
+                    else f"Your request has been added to the queue. There are {queue_length} jobs ahead of yours."
                 )
-                await update.message.reply_text(response_text)
-                logger.info(f"Audio file queued for transcription. Queue length: {queue_length}")
+                sent_msg = await update.message.reply_text(response_text)
+                messages_to_delete.append(sent_msg)
+                
+                # Queue the audio file for transcription
+                await self.task_queue.put((audio_file_path, context.bot, update, messages_to_delete))
+
+                logger.info(f"Audio file queued for transcription. Queue length: {queue_length + 1}")
 
             except subprocess.CalledProcessError as e:
                 logger.error(f"Error extracting audio from video file: {e}")
