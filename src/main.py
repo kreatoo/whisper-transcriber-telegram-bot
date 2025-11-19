@@ -757,11 +757,8 @@ class TranscriberBot:
         wav_file_path = os.path.join(audio_messages_dir, f'{file.file_id}.wav')
         await file.download_to_drive(ogg_file_path)
 
-        voice_msg = self.notification_settings['voice_message_received']
+        voice_msg = self.notification_settings['voice_message_received'].strip()
         messages_to_delete = []
-        if voice_msg.strip():
-            sent_voice_msg = await replied_msg.reply_text(voice_msg)
-            messages_to_delete.append(sent_voice_msg)
 
         # Convert Ogg Opus to WAV using ffmpeg
         try:
@@ -776,21 +773,22 @@ class TranscriberBot:
             await self.task_queue.put((wav_file_path, context.bot, reply_update, messages_to_delete))
             queue_length = self.task_queue.qsize()
 
-            msg_next = self.notification_settings['queue_message_next']
-            msg_queued = self.notification_settings['queue_message_queued']
+            msg_next = self.notification_settings['queue_message_next'].strip()
+            msg_queued = self.notification_settings['queue_message_queued'].strip()
 
-            sent_queue_msg = None
+            queue_text = ""
             if queue_length == 1:
-                if msg_next.strip():
-                    sent_queue_msg = await replied_msg.reply_text(msg_next)
+                queue_text = msg_next
             else:
-                if msg_queued.strip():
+                if msg_queued:
                     jobs_ahead = queue_length - 1
-                    final_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
-                    sent_queue_msg = await replied_msg.reply_text(final_text)
+                    queue_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
 
-            if sent_queue_msg:
-                messages_to_delete.append(sent_queue_msg)
+            combined_parts = [part for part in (voice_msg, queue_text) if part]
+            if combined_parts:
+                combined_text = "\n\n".join(combined_parts)
+                sent_message = await replied_msg.reply_text(combined_text)
+                messages_to_delete.append(sent_message)
 
             logger.info(f"Reply voice message queued for transcription. Queue length: {queue_length}")
 
@@ -912,11 +910,8 @@ class TranscriberBot:
         await file.download_to_drive(ogg_file_path)
 
         # NEW: read config-based "voice_message_received"
-        voice_msg = self.notification_settings['voice_message_received']
+        voice_msg = self.notification_settings['voice_message_received'].strip()
         messages_to_delete = []
-        if voice_msg.strip():
-            sent_voice_msg = await update.message.reply_text(voice_msg)
-            messages_to_delete.append(sent_voice_msg)
 
         # Convert Ogg Opus to WAV using ffmpeg
         try:
@@ -928,24 +923,23 @@ class TranscriberBot:
             queue_length = self.task_queue.qsize()
 
             # Load the config-based queue messages:
-            msg_next = self.notification_settings['queue_message_next']     # e.g. "⏳ Your request is next..."
-            msg_queued = self.notification_settings['queue_message_queued'] # e.g. "Your request has been added..."
+            msg_next = self.notification_settings['queue_message_next'].strip()     # e.g. "⏳ Your request is next..."
+            msg_queued = self.notification_settings['queue_message_queued'].strip() # e.g. "Your request has been added..."
 
             # Decide what message to show based on queue length
-            sent_queue_msg = None
+            queue_text = ""
             if queue_length == 1:
-                # If it's the only job in queue, show the “next” message (if not blank)
-                if msg_next.strip():
-                    sent_queue_msg = await update.message.reply_text(msg_next)
+                queue_text = msg_next
             else:
-                # If there's already something in queue, show the “queued” message (if not blank)
-                if msg_queued.strip():
+                if msg_queued:
                     jobs_ahead = queue_length - 1
-                    final_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
-                    sent_queue_msg = await update.message.reply_text(final_text)
+                    queue_text = msg_queued.replace("{jobs_ahead}", str(jobs_ahead))
             
-            if sent_queue_msg:
-                messages_to_delete.append(sent_queue_msg)
+            combined_parts = [part for part in (voice_msg, queue_text) if part]
+            if combined_parts:
+                combined_text = "\n\n".join(combined_parts)
+                sent_message = await update.message.reply_text(combined_text)
+                messages_to_delete.append(sent_message)
 
             logger.info(f"File queued for transcription. Queue length: {queue_length}")
 
