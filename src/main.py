@@ -203,6 +203,11 @@ class TranscriberBot:
             )
             return
 
+        # Only reply to mentions or private messages
+        bot_username = context.bot.username
+        if update.message.chat.type != "private" and (not message_text or f"@{bot_username}" not in message_text):
+            return
+
         # Check if message is replying to a voice message or audio file
         if update.message.reply_to_message:
             replied_msg = update.message.reply_to_message
