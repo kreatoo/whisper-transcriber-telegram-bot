@@ -741,13 +741,12 @@ class TranscriberBot:
 
         # Convert Ogg Opus to WAV using ffmpeg
         try:
-            subprocess.run(['ffmpeg', '-i', ogg_file_path, wav_file_path], check=True)
+            subprocess.run(['ffmpeg', '-y', '-i', ogg_file_path, wav_file_path], check=True)
             logger.info(f"Converted voice message to WAV format: {wav_file_path}")
 
             # Create a new update object with the replied message as the message
-            # We need to use deepcopy to avoid modifying the original update
-            reply_update = copy.deepcopy(update)
-            reply_update._message = replied_msg
+            # We avoid modifying the original update by creating a new one
+            reply_update = Update(update_id=update.update_id, message=replied_msg)
             
             # Put the WAV file into the queue with the modified update
             await self.task_queue.put((wav_file_path, context.bot, reply_update))
@@ -830,9 +829,8 @@ class TranscriberBot:
                 await replied_msg.reply_text(audio_file_msg)
 
             # Create a new update object with the replied message as the message
-            # We need to use deepcopy to avoid modifying the original update
-            reply_update = copy.deepcopy(update)
-            reply_update._message = replied_msg
+            # We avoid modifying the original update by creating a new one
+            reply_update = Update(update_id=update.update_id, message=replied_msg)
             
             # Queue the file for transcription
             await self.task_queue.put((file_path, context.bot, reply_update))
@@ -885,7 +883,7 @@ class TranscriberBot:
 
         # Convert Ogg Opus to WAV using ffmpeg
         try:
-            subprocess.run(['ffmpeg', '-i', ogg_file_path, wav_file_path], check=True)
+            subprocess.run(['ffmpeg', '-y', '-i', ogg_file_path, wav_file_path], check=True)
             logger.info(f"Converted voice message to WAV format: {wav_file_path}")
 
             # Put the WAV file into the queue
@@ -1064,7 +1062,7 @@ class TranscriberBot:
             # Extract audio from the video file using ffmpeg
             audio_file_path = os.path.join(self.audio_messages_dir, f'{file.file_unique_id}.mp3')
             try:
-                subprocess.run(['ffmpeg', '-i', video_file_path, '-vn', '-acodec', 'libmp3lame', audio_file_path], check=True)
+                subprocess.run(['ffmpeg', '-y', '-i', video_file_path, '-vn', '-acodec', 'libmp3lame', audio_file_path], check=True)
                 logger.info(f"Extracted audio from video file: {audio_file_path}")
 
                 # Queue the audio file for transcription
