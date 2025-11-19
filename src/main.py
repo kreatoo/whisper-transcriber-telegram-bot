@@ -423,7 +423,7 @@ class TranscriberBot:
                                     except Exception as e:
                                         logger.error(f"Failed to send detailed message: {e}")
 
-                                transcription_paths, raw_content = await transcribe_audio(
+                                transcription_paths, raw_content, header_content = await transcribe_audio(
                                     bot, update, task, self.output_dir, "", video_info_message,
                                     self.config.getboolean('TranscriptionSettings', 'includeheaderintranscription'),
                                     model, device, language
@@ -446,10 +446,12 @@ class TranscriberBot:
                                         file_path = transcription_paths['txt']
                                         with open(file_path, 'r') as f:
                                             content = f.read()
-                                            if self.config.getboolean('TranscriptionSettings', 'includeheaderintranscription'):
-                                                ai_transcript_header = f"[ Transcript generated with: https://github.com/FlyingFathead/whisper-transcriber-telegram-bot/ | OpenAI Whisper model: `{model}` | Language: `{language}` ]"
-                                                header_content = f"{video_info_message}\n\n{ai_transcript_header}\n\n"
-                                                content = content[len(header_content):]
+                                            if self.config.getboolean('TranscriptionSettings', 'includeheaderintranscription') and header_content:
+                                                # Use the header_content returned by transcribe_audio to strip it correctly
+                                                if content.startswith(header_content):
+                                                    content = content[len(header_content):]
+                                                else:
+                                                    logger.warning("Content does not start with expected header_content. Skipping strip.")
                                             # content = transcription_note + content  # Add transcription note
 
                                         # Escape content before splitting

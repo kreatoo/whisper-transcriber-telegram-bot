@@ -699,11 +699,11 @@ async def transcribe_audio(bot, update, audio_path, output_dir, youtube_url, vid
         # ---- END: New logic for timestamped TXT ----
 
         # Return created files and raw content for further processing
-        return created_files, raw_content
+        return created_files, raw_content, header_content
 
     except Exception as e:
         logger.error(f"An error occurred during transcription: {e}")
-        return {}, ""
+        return {}, "", ""
 
 # debugger for yt-dlp version
 async def debug_yt_dlp_version():
@@ -929,7 +929,7 @@ async def process_url_message(message_text, bot, update, model, language):
             if should_send_detailed_info:
                 await bot.send_message(chat_id=update.effective_chat.id, text=detailed_message)
 
-            transcription_paths, raw_content = await transcribe_audio(
+            transcription_paths, raw_content, header_content = await transcribe_audio(
                 bot, update, audio_path, output_dir, normalized_url, video_info_message,
                 transcription_settings['include_header'], model, device, language
             )
