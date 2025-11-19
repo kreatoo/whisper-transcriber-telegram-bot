@@ -251,6 +251,10 @@ class TranscriberBot:
                 elif replied_msg.audio or replied_msg.document:
                     await self.handle_reply_audio_file(replied_msg, update, context)
                     return
+            elif is_bot_mentioned:
+                # Bot was mentioned but replied message doesn't have voice/audio
+                logger.info(f"Bot mentioned in reply, but replied message is not a voice message or audio file (has voice={replied_msg.voice}, audio={replied_msg.audio}, document={replied_msg.document})")
+
 
         # ~~~~~ Cooldown logic ~~~~~
         now = datetime.now()
