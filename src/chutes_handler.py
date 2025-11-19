@@ -30,6 +30,10 @@ async def transcribe_with_chutes(audio_path, api_token, model="chutes-whisper-la
             audio_content = audio_file.read()
             audio_b64 = base64.b64encode(audio_content).decode('utf-8')
 
+        # If language is 'auto', send None (null in JSON) to let the model detect it
+        if language == "auto":
+            language = None
+
         payload = {
             "language": language,
             "audio_b64": audio_b64
