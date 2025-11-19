@@ -30,6 +30,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 # internal modules
 from utils.language_selection import ask_language
 
+# chutes handler
+from chutes_handler import transcribe_with_chutes, save_chutes_outputs
+
 # config
 from config_loader import ConfigLoader
 config = ConfigLoader.get_config()
@@ -555,49 +558,82 @@ def log_stderr(line):
 async def transcribe_audio(bot, update, audio_path, output_dir, youtube_url, video_info_message, include_header, model, device, language):
     log_gpu_utilization()  # Log GPU utilization before starting transcription
 
-    logger.info(f"Using device: {device} for transcription")
+    # --- Chutes API Logic ---
+    chutes_settings = ConfigLoader.get_chutes_settings()
+    use_chutes = chutes_settings['active']
+    chutes_token = chutes_settings['api_token']
+    chutes_model = chutes_settings['model']
+    fallback_to_local = chutes_settings['fallback_to_local']
     
-    # transcription_command = ["whisper", audio_path, "--model", model, "--output_dir", output_dir, "--device", device]
+    chutes_success = False
+    
+    if use_chutes:
+        if not chutes_token:
+             logger.warning("Chutes API is active but no token provided. Falling back to local.")
+        else:
+            logger.info(f"Attempting transcription with Chutes API (model: {chutes_model})...")
+            try:
+                result = await transcribe_with_chutes(audio_path, chutes_token, chutes_model, language)
+                if result:
+                    base_filename = os.path.splitext(os.path.basename(audio_path))[0]
+                    save_chutes_outputs(result, output_dir, base_filename)
+                    chutes_success = True
+                    logger.info("Chutes transcription completed and files saved.")
+                    model = f"Chutes API ({chutes_model})" # Update model name for header
+            except Exception as e:
+                logger.error(f"Chutes API error: {e}")
+                if not fallback_to_local:
+                    return {}, ""
+                logger.info("Falling back to local transcription...")
 
-    transcription_command = [
-        "whisper", audio_path, 
-        "--model", model, 
-        "--output_dir", output_dir, 
-        "--device", device
-    ]
+    if not chutes_success:
+        logger.info(f"Using device: {device} for transcription")
+        
+        # transcription_command = ["whisper", audio_path, "--model", model, "--output_dir", output_dir, "--device", device]
 
-    if language and language != "auto":
-        logger.info(f"Starting transcription with model '{model}' and language '{language}' for: {audio_path}")
-        transcription_command.extend(["--language", language])
-    else:
-        logger.info(f"Starting transcription with model '{model}' and autodetect language for: {audio_path}")
+        transcription_command = [
+            "whisper", audio_path, 
+            "--model", model, 
+            "--output_dir", output_dir, 
+            "--device", device
+        ]
 
-    # Log the transcription command
-    logger.info(f"Transcription command: {' '.join(transcription_command)}")
+        if language and language != "auto":
+            logger.info(f"Starting transcription with model '{model}' and language '{language}' for: {audio_path}")
+            transcription_command.extend(["--language", language])
+        else:
+            logger.info(f"Starting transcription with model '{model}' and autodetect language for: {audio_path}")
 
-    try:
-        # Start the subprocess and get stdout, stderr streams
-        process = await asyncio.create_subprocess_exec(
-            *transcription_command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
+        # Log the transcription command
+        logger.info(f"Transcription command: {' '.join(transcription_command)}")
 
-        # Concurrently log stdout and stderr
-        await asyncio.gather(
-            read_stream(process.stdout, log_stdout),
-            read_stream(process.stderr, log_stderr)
-        )
+        try:
+            # Start the subprocess and get stdout, stderr streams
+            process = await asyncio.create_subprocess_exec(
+                *transcription_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
 
-        # Wait for the subprocess to finish
-        await process.wait()
+            # Concurrently log stdout and stderr
+            await asyncio.gather(
+                read_stream(process.stdout, log_stdout),
+                read_stream(process.stderr, log_stderr)
+            )
 
-        if process.returncode != 0:
-            logger.error(f"Whisper process failed with return code {process.returncode}")
+            # Wait for the subprocess to finish
+            await process.wait()
+
+            if process.returncode != 0:
+                logger.error(f"Whisper process failed with return code {process.returncode}")
+                return {}, ""
+
+            logger.info(f"Whisper transcription completed for: {audio_path}")
+        except Exception as e:
+            logger.error(f"An error occurred during local transcription: {e}")
             return {}, ""
 
-        logger.info(f"Whisper transcription completed for: {audio_path}")
-
+    try:
         # Generate the header if needed, now including the model used
         ai_transcript_header = f"[ Transcript generated with: https://github.com/FlyingFathead/whisper-transcriber-telegram-bot/ | OpenAI Whisper model: `{model}` | Language: `{language}` ]"
         header_content = ""

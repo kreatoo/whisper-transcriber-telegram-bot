@@ -252,6 +252,26 @@ class ConfigLoader:
         
         return is_allowed
 
-# Usage example:
-# from config_loader import ConfigLoader
-# notification_settings = ConfigLoader.get_notification_settings()
+    @classmethod
+    def get_chutes_settings(cls):
+        """
+        Returns a dict of Chutes API settings.
+        """
+        config = cls.get_config()
+        active = config.getboolean('ChutesSettings', 'active', fallback=False)
+        api_token = config.get('ChutesSettings', 'api_token', fallback='')
+        
+        # Check env var for token if not in config or if we want to support env vars override
+        env_token = os.getenv('CHUTES_API_TOKEN')
+        if env_token:
+            api_token = env_token
+
+        model = config.get('ChutesSettings', 'model', fallback='chutes-whisper-large-v3')
+        fallback_to_local = config.getboolean('ChutesSettings', 'fallback_to_local', fallback=True)
+
+        return {
+            'active': active,
+            'api_token': api_token,
+            'model': model,
+            'fallback_to_local': fallback_to_local
+        }
