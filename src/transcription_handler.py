@@ -575,6 +575,10 @@ async def transcribe_audio(bot, update, audio_path, output_dir, youtube_url, vid
             try:
                 result = await transcribe_with_chutes(audio_path, chutes_token, chutes_model, language)
                 if result:
+                    # Attempt to update language from result if available
+                    if isinstance(result, dict) and 'language' in result:
+                        language = result['language']
+                    
                     base_filename = os.path.splitext(os.path.basename(audio_path))[0]
                     save_chutes_outputs(result, output_dir, base_filename)
                     chutes_success = True
@@ -635,7 +639,8 @@ async def transcribe_audio(bot, update, audio_path, output_dir, youtube_url, vid
 
     try:
         # Generate the header if needed, now including the model used
-        ai_transcript_header = f"[ Transcript generated with: https://github.com/FlyingFathead/whisper-transcriber-telegram-bot/ | OpenAI Whisper model: `{model}` | Language: `{language}` ]"
+        display_language = language if language else "Auto"
+        ai_transcript_header = f"[ Transcript generated with: https://github.com/FlyingFathead/whisper-transcriber-telegram-bot/ | OpenAI Whisper model: `{model}` | Language: `{display_language}` ]"
         header_content = ""
 
         if include_header:
@@ -660,6 +665,8 @@ async def transcribe_audio(bot, update, audio_path, output_dir, youtube_url, vid
                                 data = original.read()
                             with open(file_path, 'w') as modified:
                                 modified.write(header_content + data)
+                            # Update raw_content to include the header so it's sent in the message
+                            raw_content = header_content + data
                         except Exception as e:
                             logger.error(f"Error adding header to {file_path}: {e}")
 
