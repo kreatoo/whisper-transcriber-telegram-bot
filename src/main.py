@@ -161,6 +161,16 @@ class TranscriberBot:
         os.makedirs(self.output_dir, exist_ok=True)
 
     async def start_command(self, update: Update, context: CallbackContext) -> None:
+        chat_id = update.effective_chat.id
+        
+        # Check if this chat is allowed to use the bot
+        if not ConfigLoader.is_group_allowed(chat_id):
+            logger.warning(f"Unauthorized /start command attempt from chat_id: {chat_id}")
+            await update.message.reply_text(
+                "⚠️ This bot is restricted to specific groups. Access denied."
+            )
+            return
+        
         max_file_size_mb = self.max_file_size_mb  # Use the configured value
         welcome_message = (
             "👋 <b>Welcome to the Whisper Transcriber Bot!</b>\n\n"
@@ -180,8 +190,17 @@ class TranscriberBot:
 
     async def handle_message(self, update: Update, context: CallbackContext) -> None:
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
         message_text = update.message.text
-        logger.info(f"Received a message from user ID {user_id}: {message_text}")
+        logger.info(f"Received a message from user ID {user_id} in chat ID {chat_id}: {message_text}")
+
+        # Check if this chat is allowed to use the bot
+        if not ConfigLoader.is_group_allowed(chat_id):
+            logger.warning(f"Unauthorized access attempt from chat_id: {chat_id}")
+            await update.message.reply_text(
+                "⚠️ This bot is restricted to specific groups. Access denied."
+            )
+            return
 
         # ~~~~~ Cooldown logic ~~~~~
         now = datetime.now()
@@ -483,6 +502,16 @@ class TranscriberBot:
     # set the model's language
     async def set_language_command(self, update: Update, context: CallbackContext) -> None:
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        
+        # Check if this chat is allowed to use the bot
+        if not ConfigLoader.is_group_allowed(chat_id):
+            logger.warning(f"Unauthorized /language command attempt from chat_id: {chat_id}")
+            await update.message.reply_text(
+                "⚠️ This bot is restricted to specific groups. Access denied."
+            )
+            return
+        
         supported_languages = self.config.get('WhisperSettings', 'supportedlanguages', fallback='auto').split(', ')
 
         if not context.args:
@@ -506,6 +535,16 @@ class TranscriberBot:
 
     # view help
     async def help_command(self, update: Update, context: CallbackContext) -> None:
+        chat_id = update.effective_chat.id
+        
+        # Check if this chat is allowed to use the bot
+        if not ConfigLoader.is_group_allowed(chat_id):
+            logger.warning(f"Unauthorized /help command attempt from chat_id: {chat_id}")
+            await update.message.reply_text(
+                "⚠️ This bot is restricted to specific groups. Access denied."
+            )
+            return
+        
         models_list = ', '.join(self.valid_models)  # Dynamically generate the list of valid models
         allowed_formats_list = ', '.join(self.allowed_formats)  # Get the list of allowed formats
 
@@ -590,6 +629,16 @@ class TranscriberBot:
 
     async def model_command(self, update: Update, context: CallbackContext) -> None:
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        
+        # Check if this chat is allowed to use the bot
+        if not ConfigLoader.is_group_allowed(chat_id):
+            logger.warning(f"Unauthorized /model command attempt from chat_id: {chat_id}")
+            await update.message.reply_text(
+                "⚠️ This bot is restricted to specific groups. Access denied."
+            )
+            return
+        
         current_time = time.time()
         models_list = ', '.join(self.valid_models)  # Dynamically generate the list of valid models
         
@@ -630,7 +679,16 @@ class TranscriberBot:
 
     async def handle_voice_message(self, update: Update, context: CallbackContext) -> None:
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
         voice = update.message.voice
+
+        # Check if this chat is allowed to use the bot
+        if not ConfigLoader.is_group_allowed(chat_id):
+            logger.warning(f"Unauthorized voice message attempt from chat_id: {chat_id}")
+            await update.message.reply_text(
+                "⚠️ This bot is restricted to specific groups. Access denied."
+            )
+            return
         
         if not self.config.getboolean('AudioSettings', 'allowvoicemessages'):
             await update.message.reply_text("Voice messages are not allowed.")
@@ -681,6 +739,15 @@ class TranscriberBot:
         logger.info("handle_audio_file called.")
 
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+
+        # Check if this chat is allowed to use the bot
+        if not ConfigLoader.is_group_allowed(chat_id):
+            logger.warning(f"Unauthorized audio file attempt from chat_id: {chat_id}")
+            await update.message.reply_text(
+                "⚠️ This bot is restricted to specific groups. Access denied."
+            )
+            return
 
         # Check if file uploads are allowed
         allow_audio_files = self.config.getboolean('AudioSettings', 'allowaudiofiles', fallback=True)
@@ -773,6 +840,15 @@ class TranscriberBot:
         logger.info("handle_video_file called.")
 
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+
+        # Check if this chat is allowed to use the bot
+        if not ConfigLoader.is_group_allowed(chat_id):
+            logger.warning(f"Unauthorized video file attempt from chat_id: {chat_id}")
+            await update.message.reply_text(
+                "⚠️ This bot is restricted to specific groups. Access denied."
+            )
+            return
 
         # Check if video file uploads are allowed
         if not self.allow_video_files:
@@ -838,6 +914,16 @@ class TranscriberBot:
 
     async def info_command(self, update: Update, context: CallbackContext) -> None:
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        
+        # Check if this chat is allowed to use the bot
+        if not ConfigLoader.is_group_allowed(chat_id):
+            logger.warning(f"Unauthorized /info command attempt from chat_id: {chat_id}")
+            await update.message.reply_text(
+                "⚠️ This bot is restricted to specific groups. Access denied."
+            )
+            return
+        
         current_model = get_whisper_model(user_id)
         current_language = get_whisper_language(user_id)
         uptime = datetime.now() - self.start_time  # Assuming self.start_time is set at bot launch

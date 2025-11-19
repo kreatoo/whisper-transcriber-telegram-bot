@@ -207,6 +207,50 @@ class ConfigLoader:
         config = cls.get_config()
         return config.getboolean('OwnerSettings', 'ping_owners_on_start', fallback=False)
 
+    @classmethod
+    def get_allowed_group_ids(cls):
+        """
+        Return a list of allowed group/chat IDs as integers.
+        If the list is empty, all groups/chats are allowed.
+        """
+        config = cls.get_config()
+        allowed_ids_str = config.get('AccessControl', 'allowed_group_ids', fallback='').strip()
+        
+        if not allowed_ids_str:
+            # Empty = no restrictions
+            logger.info("No group ID restrictions configured (all groups allowed)")
+            return []
+        
+        try:
+            # Parse comma-separated list of IDs
+            allowed_ids = [int(x.strip()) for x in allowed_ids_str.split(',') if x.strip()]
+            logger.info(f"Allowed group IDs configured: {allowed_ids}")
+            return allowed_ids
+        except ValueError as e:
+            logger.error(f"Could not parse allowed_group_ids in config.ini: {allowed_ids_str}, error: {e}")
+            return []
+
+    @classmethod
+    def is_group_allowed(cls, chat_id: int) -> bool:
+        """
+        Check if a given chat_id is allowed to use the bot.
+        Returns True if the chat is allowed, False otherwise.
+        If no restrictions are configured, returns True.
+        """
+        allowed_ids = cls.get_allowed_group_ids()
+        
+        # If no restrictions configured, allow all
+        if not allowed_ids:
+            return True
+        
+        # Check if chat_id is in the allowed list
+        is_allowed = chat_id in allowed_ids
+        
+        if not is_allowed:
+            logger.warning(f"Access denied for chat_id: {chat_id} (not in allowed list)")
+        
+        return is_allowed
+
 # Usage example:
 # from config_loader import ConfigLoader
 # notification_settings = ConfigLoader.get_notification_settings()

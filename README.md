@@ -189,6 +189,25 @@ After launching your bot successfully, you can interact with it via Telegram (se
 2. The bot will acknowledge the request and begin processing, notifying the user of the process.
 3. Once processing is complete, the bot will send the transcription to you. By default, the transcription is sent as a message as well as `.txt`, `.srt` and `.vtt` files. Transcription delivery formats can be adjusted from the `config.ini`.
 
+## Access Control
+
+You can restrict the bot to specific Telegram groups or chats by configuring the `allowed_group_ids` setting in `config.ini` under the `[AccessControl]` section.
+
+- **Allow all groups (default)**: Leave `allowed_group_ids` empty
+- **Restrict to specific groups**: Add comma-separated group IDs, e.g., `allowed_group_ids = -1001234567890, -1009876543210`
+
+**To find your group ID:**
+1. Add the bot to your group
+2. Send a message in the group
+3. Check the bot logs for the chat_id (group IDs typically start with a minus sign)
+
+Example configuration:
+```ini
+[AccessControl]
+# Restrict to specific groups
+allowed_group_ids = -1001234567890, -1009876543210
+```
+
 ## Commands
 
 - `/info` to view current settings, uptime, GPU info and queue status
