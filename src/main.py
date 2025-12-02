@@ -845,11 +845,11 @@ class TranscriberBot:
             logger.info(f"Extracted file extension: {file_extension}")
 
             if file_extension not in self.allowed_formats:
-                await update.message.reply_text(
-                    f"Files with extension .{file_extension} are not supported.\n"
-                    f"Supported formats are: {', '.join(self.allowed_formats)}"
+                # Unsupported file format: ignore silently but keep logging for observability
+                logger.info(
+                    "File extension not in allowed formats. "
+                    f"Unsupported extension: .{file_extension}, allowed: {self.allowed_formats}"
                 )
-                logger.info("File extension not in allowed formats.")
                 return
 
             # Proceed with downloading and processing the file
@@ -1037,11 +1037,11 @@ class TranscriberBot:
             logger.info(f"Allowed formats: {self.allowed_formats}")
 
             if file_extension not in self.allowed_formats:
-                await update.message.reply_text(
-                    f"Files with extension .{file_extension} are not supported.\n"
-                    f"Supported formats are: {', '.join(self.allowed_formats)}"
+                # Unsupported file format: ignore silently but keep logging for observability
+                logger.info(
+                    "File extension not in allowed formats. "
+                    f"Unsupported extension: .{file_extension}, allowed: {self.allowed_formats}"
                 )
-                logger.info("File extension not in allowed formats.")
                 return
 
             # Proceed with downloading and processing the file
@@ -1105,11 +1105,8 @@ class TranscriberBot:
 
         # Check if video file uploads are allowed
         if not self.allow_video_files:
-            await update.message.reply_text(
-                "Direct video uploads are currently disabled. "
-                "Please send audio files only, or upload your video to a supported media platform and send the link."
-            )
-            logger.info("Video processing is not allowed according to config.")
+            # Video uploads are disabled; ignore silently while logging for observability
+            logger.info("Video processing is not allowed according to config. Ignoring video message silently.")
             return
 
         if not self.auto_transcribe_media:
